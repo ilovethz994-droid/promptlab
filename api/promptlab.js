@@ -1,4 +1,5 @@
 import { getVercelOidcToken } from '@vercel/oidc'
+import { generateText } from 'ai'
 const json = (res, status, body) => res.status(status).json(body)
 
 async function getAuth() {
@@ -33,27 +34,31 @@ function buildSystem(mode) {
 }
 
 async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
-  const gateway = auth.type === 'gateway'
-  const url = gateway
-    ? 'https://ai-gateway.vercel.sh/v1/chat/completions'
-    : 'https://api.deepseek.com/chat/completions'
-  const body = {
-    model: gateway ? 'deepseek/deepseek-v4-flash' : 'deepseek-chat',
-    messages,
-    temperature,
-    max_tokens: maxTokens,
-    stream: false,
-    response_format: { type: 'json_object' }
+  if (auth.type === 'gateway') {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 60000)
+    try {
+      const result = await generateText({
+        model: 'deepseek/deepseek-v3.2',
+        messages,
+        temperature,
+        maxOutputTokens: maxTokens,
+        abortSignal: controller.signal
+      })
+      if (!result?.text) throw new Error('MODEL_EMPTY')
+      return result.text
+    } finally {
+      clearTimeout(timer)
+    }
   }
-  if (gateway) body.models = ['deepseek/deepseek-v3.2']
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   try {
-    const response = await fetch(url, {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ model: 'deepseek-chat', messages, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
       signal: controller.signal
     })
     if (!response.ok) throw new Error(`MODEL_HTTP_${response.status}`)
@@ -92,9 +97,13 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' })
+  const isSelfTest = req.method === 'GET' && req.query?.selftest === '1'
+  if (req.method !== 'POST' && !isSelfTest) return json(res, 405, { error: 'Method not allowed' })
 
-  const { prompt, target = '通用', scene = '自动识别', mode = 'deep' } = req.body || {}
+  const input = isSelfTest
+    ? { prompt: '帮我做个高级网站', target: '通用', scene: '自动识别', mode: 'fast' }
+    : (req.body || {})
+  const { prompt, target = '通用', scene = '自动识别', mode = 'deep' } = input
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) return json(res, 400, { error: '请输入原始需求' })
   if (prompt.length > 12000) return json(res, 400, { error: '内容过长，请控制在 12000 字以内' })
   const auth = await getAuth()

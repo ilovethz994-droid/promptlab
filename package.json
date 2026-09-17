@@ -92,6 +92,7 @@
     ]
   },
   "dependencies": {
-    "@vercel/oidc": "3.8.8"
+    "@vercel/oidc": "3.8.8",
+    "ai": "7.0.102"
   }
 }
