@@ -1,8 +1,10 @@
 const json = (res, status, body) => res.status(status).json(body)
 
-function getAuth() {
+async function getAuth(req) {
   const gateway = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN
   if (gateway) return { type: 'gateway', token: gateway }
+  const headerToken = req?.headers?.['x-vercel-oidc-token'] || req?.headers?.['X-Vercel-OIDC-Token']
+  if (headerToken) return { type: 'gateway', token: String(headerToken) }
   const deepseek = process.env.DEEPSEEK_API_KEY
   if (deepseek) return { type: 'deepseek', token: deepseek }
   return null
@@ -90,7 +92,7 @@ export default async function handler(req, res) {
   const { prompt, target = '通用', scene = '自动识别', mode = 'deep' } = req.body || {}
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) return json(res, 400, { error: '请输入原始需求' })
   if (prompt.length > 12000) return json(res, 400, { error: '内容过长，请控制在 12000 字以内' })
-  const auth = getAuth()
+  const auth = await getAuth(req)
   if (!auth) return json(res, 503, { error: '模型服务尚未配置' })
 
   try {
