@@ -1,4 +1,3 @@
-import { getVercelOidcToken } from '@vercel/oidc'
 import { createHash, randomUUID } from 'node:crypto'
 const json = (res, status, body) => res.status(status).json(body)
 
@@ -37,16 +36,7 @@ async function finalizeAccess(requestId, success) {
 
 async function getAuth() {
   const deepseek = process.env.DEEPSEEK_API_KEY
-  if (deepseek) return { type: 'deepseek', token: deepseek }
-  const apiKey = process.env.AI_GATEWAY_API_KEY
-  if (apiKey) return { type: 'gateway', token: apiKey }
-  try {
-    const oidc = await getVercelOidcToken()
-    if (oidc) return { type: 'gateway', token: oidc }
-  } catch (error) {
-    console.warn('OIDC unavailable:', error?.message || error)
-  }
-  return null
+  return deepseek ? { type: 'deepseek', token: deepseek } : null
 }
 
 function buildSystem(mode) {
@@ -67,9 +57,7 @@ function buildSystem(mode) {
 }
 
 async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
-  if (auth.type === 'gateway') {
-    const { generateText } = await import('ai')
-    const controller = new AbortController()
+  const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 60000)
     try {
       const instructions = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
