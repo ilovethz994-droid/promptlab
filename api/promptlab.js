@@ -5,6 +5,11 @@ function accessHash(code) {
   return createHash('sha256').update(String(code || '').trim().toUpperCase()).digest('hex')
 }
 
+function rpcSecret() {
+  const base = process.env.DEEPSEEK_API_KEY || ''
+  return createHash('sha256').update(base + ':promptlab-rpc-v1').digest('hex')
+}
+
 function supabaseConfig() {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_PUBLISHABLE_KEY
@@ -16,7 +21,7 @@ async function supabaseRpc(name, payload) {
   const { url, key } = supabaseConfig()
   const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}`, 'x-promptlab-secret': rpcSecret() },
     body: JSON.stringify(payload)
   })
   if (!response.ok) throw new Error(`ACCESS_RPC_${name}_${response.status}`)
