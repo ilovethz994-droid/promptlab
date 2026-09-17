@@ -68,7 +68,7 @@ async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2, mo
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
+      body: JSON.stringify({ model, messages, thinking: { type: 'disabled' }, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
       signal: controller.signal
     })
     if (!response.ok) throw new Error(`MODEL_HTTP_${response.status}`)
