@@ -2,6 +2,8 @@ import { getVercelOidcToken } from '@vercel/oidc'
 const json = (res, status, body) => res.status(status).json(body)
 
 async function getAuth() {
+  const deepseek = process.env.DEEPSEEK_API_KEY
+  if (deepseek) return { type: 'deepseek', token: deepseek }
   const apiKey = process.env.AI_GATEWAY_API_KEY
   if (apiKey) return { type: 'gateway', token: apiKey }
   try {
@@ -10,8 +12,6 @@ async function getAuth() {
   } catch (error) {
     console.warn('OIDC unavailable:', error?.message || error)
   }
-  const deepseek = process.env.DEEPSEEK_API_KEY
-  if (deepseek) return { type: 'deepseek', token: deepseek }
   return null
 }
 
