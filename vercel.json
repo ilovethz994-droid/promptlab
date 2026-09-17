@@ -1,12 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "if [[ $(pwd) == */packages/extension ]]; then cd ../.. && pnpm build && mkdir -p packages/extension/packages/web && cp -r packages/web/dist packages/extension/packages/web/dist; else pnpm build; fi",
+  "buildCommand": "pnpm build:core && pnpm -F @prompt-optimizer/ui build:bundle && pnpm build:web",
   "outputDirectory": "packages/web/dist",
   "installCommand": "pwd && if [[ $(pwd) == */packages/extension ]]; then cd ../..; fi && pnpm install --no-frozen-lockfile",
   "rewrites": [
     {
       "source": "/api/:path*",
       "destination": "/api/:path*"
+    },
+    {
+      "source": "/_vercel/:path*",
+      "destination": "/_vercel/:path*"
     },
     {
       "source": "/(.*)",

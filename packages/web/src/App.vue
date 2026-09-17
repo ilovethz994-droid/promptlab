@@ -16,15 +16,17 @@
       <article class="panel input-panel">
         <div class="panel-head"><div><span class="step">01</span><strong>你的原始需求</strong></div><span>{{ prompt.length }}/12000</span></div>
         <textarea v-model="prompt" maxlength="12000" placeholder="直接写人话就行。例如：帮我做个高级网站，要有质感，最好能直接上线。"></textarea>
-        <div class="examples"><button v-for="item in examples" :key="item" @click="prompt=item">{{ item }}</button></div>        <div class="options">
+        <div class="examples"><button v-for="item in examples" :key="item" @click="prompt=item">{{ item }}</button></div>
+        <div class="access-row"><label>访问码<input v-model.trim="accessCode" autocomplete="off" placeholder="购买后获得的访问码" /></label><span v-if="remaining !== null">剩余 <b>{{ remaining }}</b> 次</span></div>
+        <div class="options">
           <label>目标模型<select v-model="target"><option v-for="x in targets" :key="x">{{ x }}</option></select></label>
           <label>使用场景<select v-model="scene"><option v-for="x in scenes" :key="x">{{ x }}</option></select></label>
           <label>精修强度<select v-model="mode"><option value="fast">极速精修</option><option value="deep">深度精修</option></select></label>
         </div>
-        <button class="primary" :disabled="loading || !prompt.trim()" @click="optimize">
+        <button class="primary" :disabled="loading || !prompt.trim() || !accessCode.trim()" @click="optimize">
           <span v-if="loading" class="spinner"></span>{{ loading ? '正在精修...' : '一键精修' }}
         </button>
-        <p class="hint">原始表达可以很简单，PromptLab 会负责把它整理成可执行指令。</p>
+        <p class="hint">访问码只需输入一次，本浏览器会自动记住。原始表达可以很简单，PromptLab 会负责把它整理成可执行指令。</p>
         <p v-if="error" class="error">{{ error }}</p>
       </article>
 
@@ -35,7 +37,7 @@
           <p>不是单纯把提示词写长，而是让模型真正知道要做什么、做到什么程度。</p>
         </div>
         <template v-else>
-          <div class="score-row"><span>原始质量 <b>{{ result.score_before }}</b></span><i>→</i><span>精修后 <b class="good">{{ result.score_after }}</b></span></div>          <pre class="result">{{ result.optimized_prompt }}</pre>
+          <div class="score-row"><span>原始结构 <b>{{ result.score_before }}</b></span><i>→</i><span>精修后结构 <b class="good">{{ result.score_after }}</b></span></div>          <pre class="result">{{ result.optimized_prompt }}</pre>
           <div class="meta-grid">
             <div><strong>原提示词的问题</strong><ul><li v-for="x in result.diagnosis" :key="x">{{ x }}</li></ul></div>
             <div><strong>本次精修处理</strong><ul><li v-for="x in result.assumptions" :key="x">{{ x }}</li></ul></div>
@@ -58,6 +60,9 @@ const mode = ref('deep')
 const loading = ref(false)
 const error = ref('')
 const copied = ref(false)
+const accessCode = ref(localStorage.getItem('promptlab_access_code') || '')
+const savedRemaining = localStorage.getItem('promptlab_remaining')
+const remaining = ref(savedRemaining === null ? null : Number(savedRemaining))
 const result = reactive({ optimized_prompt:'', diagnosis:[], assumptions:[], score_before:0, score_after:0 })
 const targets = ['通用','ChatGPT','Claude','DeepSeek','Gemini','Cursor / Claude Code']
 const scenes = ['自动识别','编程开发','商业分析','内容写作','深度研究','办公效率','图片生成','视频生成']
@@ -102,10 +107,13 @@ async function optimize(){
   error.value=''; copied.value=false; loading.value=true
   Object.assign(result,{optimized_prompt:'',diagnosis:[],assumptions:[],score_before:0,score_after:0})
   try{
-    const r=await fetch('/api/promptlab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:prompt.value,target:target.value,scene:scene.value,mode:mode.value})})
+    localStorage.setItem('promptlab_access_code',accessCode.value.trim())
+    const requestId=crypto.randomUUID()
+    const r=await fetch('/api/promptlab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:prompt.value,target:target.value,scene:scene.value,mode:mode.value,access_code:accessCode.value.trim(),request_id:requestId})})
     const data=await r.json()
     if(!r.ok) throw new Error(data?.error||'精修失败')
     Object.assign(result,data)
+    if(Number.isFinite(Number(data.remaining))){remaining.value=Number(data.remaining);localStorage.setItem('promptlab_remaining',String(remaining.value))}
   }catch(e){ error.value=e?.message||'精修失败，请稍后重试' }
   finally{ loading.value=false }
 }
@@ -136,6 +144,7 @@ button,select,textarea{font:inherit}
 textarea{width:100%;height:265px;resize:none;border:1px solid #e4dfd7;border-radius:16px;background:#faf9f6;padding:18px;font-size:16px;line-height:1.7;outline:none;transition:.2s}
 textarea:focus{border-color:#998b6d;box-shadow:0 0 0 3px #9c8c6d18}
 .examples{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.examples button,.copy{border:1px solid #ded9d0;background:#fff;border-radius:999px;padding:8px 11px;font-size:12px;cursor:pointer;color:#555}
+.access-row{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 0 14px}.access-row label{flex:1;font-size:11px;color:#777}.access-row input{margin-top:5px;width:100%;border:1px solid #ded9d0;background:#faf9f6;border-radius:10px;padding:10px;color:#333;outline:none}.access-row input:focus{border-color:#998b6d;box-shadow:0 0 0 3px #9c8c6d18}.access-row span{white-space:nowrap;font-size:12px;color:#6d685f;padding:10px 2px}.access-row b{color:#171717;font-size:15px}
 .options{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.options label{font-size:11px;color:#777}.options select{margin-top:5px;width:100%;border:1px solid #ded9d0;background:#faf9f6;border-radius:10px;padding:10px;color:#333}
 .primary{width:100%;margin-top:18px;border:0;border-radius:14px;padding:15px 18px;background:#171717;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 10px 28px #0002}.primary:disabled{opacity:.48;cursor:not-allowed}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff5;border-top-color:#fff;border-radius:50%;vertical-align:-2px;margin-right:8px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}

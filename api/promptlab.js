@@ -1,5 +1,39 @@
 import { getVercelOidcToken } from '@vercel/oidc'
+import { createHash, randomUUID } from 'node:crypto'
 const json = (res, status, body) => res.status(status).json(body)
+
+function accessHash(code) {
+  return createHash('sha256').update(String(code || '').trim().toUpperCase()).digest('hex')
+}
+
+function supabaseConfig() {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY
+  if (!url || !key) throw new Error('ACCESS_CONTROL_NOT_CONFIGURED')
+  return { url: url.replace(/\/$/, ''), key }
+}
+
+async function supabaseRpc(name, payload) {
+  const { url, key } = supabaseConfig()
+  const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+    body: JSON.stringify(payload)
+  })
+  if (!response.ok) throw new Error(`ACCESS_RPC_${name}_${response.status}`)
+  const data = await response.json()
+  return Array.isArray(data) ? data[0] : data
+}
+
+async function reserveAccess(code, requestId, mode, target) {
+  return supabaseRpc('promptlab_reserve_access', {
+    p_code_hash: accessHash(code), p_request_id: requestId, p_mode: mode, p_target: target
+  })
+}
+
+async function finalizeAccess(requestId, success) {
+  return supabaseRpc('promptlab_finalize_access', { p_request_id: requestId, p_success: success })
+}
 
 async function getAuth() {
   const deepseek = process.env.DEEPSEEK_API_KEY
@@ -100,17 +134,32 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
-  const isSelfTest = req.method === 'GET' && req.query?.selftest === '1'
-  if (req.method !== 'POST' && !isSelfTest) return json(res, 405, { error: 'Method not allowed' })
+  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' })
 
-  const input = isSelfTest
-    ? { prompt: '帮我做个高级网站', target: '通用', scene: '自动识别', mode: 'fast' }
-    : (req.body || {})
-  const { prompt, target = '通用', scene = '自动识别', mode = 'deep' } = input
+  const { prompt, target = '通用', scene = '自动识别', mode = 'deep', access_code, request_id } = req.body || {}
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) return json(res, 400, { error: '请输入原始需求' })
   if (prompt.length > 12000) return json(res, 400, { error: '内容过长，请控制在 12000 字以内' })
+  if (!access_code || typeof access_code !== 'string' || access_code.trim().length < 8) return json(res, 401, { error: '请输入有效访问码' })
+
+  const reqId = /^[0-9a-f-]{36}$/i.test(String(request_id || '')) ? String(request_id) : randomUUID()
+  let reservation
+  try {
+    reservation = await reserveAccess(access_code, reqId, mode, target)
+  } catch (error) {
+    console.error('PromptLab access reserve error:', error?.message || error)
+    return json(res, 503, { error: '访问码服务暂时不可用，请稍后重试' })
+  }
+  if (!reservation?.ok) {
+    if (reservation?.reason === 'quota_exhausted') return json(res, 402, { error: '使用次数已用完，请续费后继续使用', remaining: 0 })
+    if (reservation?.reason === 'request_conflict') return json(res, 409, { error: '请求冲突，请重新提交' })
+    return json(res, 401, { error: '访问码无效或已过期' })
+  }
+
   const auth = await getAuth()
-  if (!auth) return json(res, 503, { error: '模型服务尚未配置' })
+  if (!auth) {
+    try { await finalizeAccess(reqId, false) } catch {}
+    return json(res, 503, { error: '模型服务尚未配置' })
+  }
 
   try {
     let blueprint = null
@@ -151,8 +200,10 @@ ${blueprint ? `\n精修蓝图：${JSON.stringify(blueprint)}` : ''}
     ], mode === 'deep' ? 4200 : 2600, mode === 'deep' ? 0.18 : 0.12)
     const result = normalizeResult(parseJson(raw), prompt)
     if (!result.optimized_prompt || result.optimized_prompt.length < 80) throw new Error('PROMPT_TOO_SHORT')
-    return json(res, 200, result)
+    try { await finalizeAccess(reqId, true) } catch (error) { console.error('PromptLab finalize error:', error?.message || error) }
+    return json(res, 200, { ...result, remaining: Number(reservation.remaining ?? 0) })
   } catch (error) {
+    try { await finalizeAccess(reqId, false) } catch (refundError) { console.error('PromptLab refund error:', refundError?.message || refundError) }
     console.error('PromptLab API error:', error?.message || error)
     return json(res, 500, { error: '精修失败，请稍后重试' })
   }
