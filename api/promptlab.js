@@ -61,14 +61,14 @@ function buildSystem(mode) {
 9. 默认输出中文，除非用户明确要求其他语言。`
 }
 
-async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2, model = 'deepseek-flash') {
+async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   try {
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-      body: JSON.stringify({ model, messages, thinking: { type: 'disabled' }, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
+      body: JSON.stringify({ model: 'deepseek-chat', messages, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
       signal: controller.signal
     })
     if (!response.ok) throw new Error(`MODEL_HTTP_${response.status}`)
@@ -88,6 +88,15 @@ function parseJson(text) {
   const end = cleaned.lastIndexOf('}')
   if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1))
   throw new Error('MODEL_JSON_INVALID')
+}
+
+async function callJsonModel(auth, messages, maxTokens, temperature) {
+  let lastError
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return parseJson(await callModel(auth, messages, maxTokens, temperature)) }
+    catch (error) { lastError = error }
+  }
+  throw lastError || new Error('MODEL_JSON_INVALID')
 }
 
 function normalizeResult(data, originalPrompt) {
@@ -144,10 +153,10 @@ module.exports = async function handler(req, res) {
 
 只返回 JSON，字段：task_type, true_intent, known_facts, missing_critical, safe_defaults, recommended_structure, quality_bar。
 要求：missing_critical 最多3项；不要虚构任何业务事实；recommended_structure 只保留对该任务真正有价值的模块。`
-      blueprint = parseJson(await callModel(auth, [
+      blueprint = await callJsonModel(auth, [
         { role: 'system', content: buildSystem(mode) },
         { role: 'user', content: analysisPrompt }
-      ], 1400, 0.1, 'deepseek-flash'))
+      ], 1400, 0.1)
     }
 
     const finalPrompt = `请把下面的原始需求精修为一份可直接复制使用的专业提示词。
@@ -167,11 +176,11 @@ ${blueprint ? `\n精修蓝图：${JSON.stringify(blueprint)}` : ''}
 
 只返回合法 JSON，不要 Markdown 代码围栏：
 {"optimized_prompt":"...","diagnosis":["..."],"score_before":0,"score_after":0,"assumptions":["..."]}`
-    const raw = await callModel(auth, [
+    const parsed = await callJsonModel(auth, [
       { role: 'system', content: buildSystem(mode) },
       { role: 'user', content: finalPrompt }
-    ], mode === 'deep' ? 4200 : 2600, mode === 'deep' ? 0.18 : 0.12, mode === 'deep' ? 'deepseek-v4-pro' : 'deepseek-flash')
-    const result = normalizeResult(parseJson(raw), prompt)
+    ], mode === 'deep' ? 4200 : 2600, mode === 'deep' ? 0.18 : 0.12)
+    const result = normalizeResult(parsed, prompt)
     if (!result.optimized_prompt || result.optimized_prompt.length < 80) throw new Error('PROMPT_TOO_SHORT')
     try { await finalizeAccess(reqId, true) } catch (error) { console.error('PromptLab finalize error:', error?.message || error) }
     return json(res, 200, { ...result, remaining: Number(reservation.remaining ?? 0) })
