@@ -47,7 +47,7 @@
     </section>
 
     <section class="trust"><span>✓ 模糊输入可用</span><span>✓ 不擅自编造业务事实</span><span>✓ 直接复制到主流 AI</span></section>
-    <footer>PromptLab · 基于开源 Prompt Optimizer 改造 · AGPL-3.0</footer>
+    <footer>PromptLab · 基于开源 Prompt Optimizer 改造 · <a href="https://github.com/ilovethz994-droid/promptlab" target="_blank" rel="noopener">AGPL-3.0 源码</a><br><small>输入内容会发送至模型服务处理；本站默认不持久化保存你的提示词正文。</small></footer>
   </main>
 </template>
 

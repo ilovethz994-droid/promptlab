@@ -119,7 +119,7 @@ module.exports = async function handler(req, res) {
   }
   if (!reservation?.ok) {
     if (reservation?.reason === 'quota_exhausted') return json(res, 402, { error: '使用次数已用完，请续费后继续使用', remaining: 0 })
-    if (reservation?.reason === 'request_conflict') return json(res, 409, { error: '请求冲突，请重新提交' })
+    if (['request_conflict','request_already_used'].includes(reservation?.reason)) return json(res, 409, { error: '本次请求已处理，请重新点击精修' })
     return json(res, 401, { error: '访问码无效或已过期' })
   }
 
