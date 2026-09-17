@@ -61,14 +61,14 @@ function buildSystem(mode) {
 9. 默认输出中文，除非用户明确要求其他语言。`
 }
 
-async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
+async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2, model = 'deepseek-flash') {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   try {
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-      body: JSON.stringify({ model: 'deepseek-chat', messages, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }),
       signal: controller.signal
     })
     if (!response.ok) throw new Error(`MODEL_HTTP_${response.status}`)
@@ -147,7 +147,7 @@ module.exports = async function handler(req, res) {
       blueprint = parseJson(await callModel(auth, [
         { role: 'system', content: buildSystem(mode) },
         { role: 'user', content: analysisPrompt }
-      ], 1400, 0.1))
+      ], 1400, 0.1, 'deepseek-flash'))
     }
 
     const finalPrompt = `请把下面的原始需求精修为一份可直接复制使用的专业提示词。
@@ -170,7 +170,7 @@ ${blueprint ? `\n精修蓝图：${JSON.stringify(blueprint)}` : ''}
     const raw = await callModel(auth, [
       { role: 'system', content: buildSystem(mode) },
       { role: 'user', content: finalPrompt }
-    ], mode === 'deep' ? 4200 : 2600, mode === 'deep' ? 0.18 : 0.12)
+    ], mode === 'deep' ? 4200 : 2600, mode === 'deep' ? 0.18 : 0.12, mode === 'deep' ? 'deepseek-v4-pro' : 'deepseek-flash')
     const result = normalizeResult(parseJson(raw), prompt)
     if (!result.optimized_prompt || result.optimized_prompt.length < 80) throw new Error('PROMPT_TOO_SHORT')
     try { await finalizeAccess(reqId, true) } catch (error) { console.error('PromptLab finalize error:', error?.message || error) }

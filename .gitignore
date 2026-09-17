@@ -205,3 +205,6 @@ AGENTS.md
 
 .vercel
 .env*
+
+# PromptLab seller private inventory
+seller/private/
