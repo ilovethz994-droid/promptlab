@@ -1,5 +1,4 @@
 import { getVercelOidcToken } from '@vercel/oidc'
-import { generateText } from 'ai'
 const json = (res, status, body) => res.status(status).json(body)
 
 async function getAuth() {
@@ -35,6 +34,7 @@ function buildSystem(mode) {
 
 async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
   if (auth.type === 'gateway') {
+    const { generateText } = await import('ai')
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 60000)
     try {
