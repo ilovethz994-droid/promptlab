@@ -38,9 +38,12 @@ async function callModel(auth, messages, maxTokens = 3200, temperature = 0.2) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 60000)
     try {
+      const instructions = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+      const nonSystemMessages = messages.filter(m => m.role !== 'system')
       const result = await generateText({
         model: 'deepseek/deepseek-v3.2',
-        messages,
+        instructions,
+        messages: nonSystemMessages,
         temperature,
         maxOutputTokens: maxTokens,
         abortSignal: controller.signal
